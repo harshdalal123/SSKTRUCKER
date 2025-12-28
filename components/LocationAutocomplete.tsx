@@ -27,10 +27,15 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
 
   // Check for Google Maps API availability
   useEffect(() => {
+    let attempts = 0;
     const checkApi = () => {
-      if (window.google && window.google.maps && window.google.maps.places) {
-        setIsApiReady(true);
-        return true;
+      attempts++;
+      if (window.google && window.google.maps) {
+        // If Places is available, great. If not, and we've waited, we assume it's blocked/missing.
+        if (window.google.maps.places || attempts > 20) {
+            setIsApiReady(true);
+            return true;
+        }
       }
       return false;
     };
@@ -50,11 +55,16 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
   useEffect(() => {
     if (!isApiReady || !inputRef.current) return;
 
+    // Safety check: if places library didn't load (e.g. API key restriction), skip autocomplete
+    if (!window.google?.maps?.places) {
+        return;
+    }
+
     try {
       // Clear previous instance if any
       if (autoCompleteRef.current) {
-        // clean up listeners if possible, though GMaps instance cleanup is tricky. 
-        // Usually we just overwrite the ref.
+        // clean up listeners if possible
+        window.google.maps.event.clearInstanceListeners(autoCompleteRef.current);
       }
 
       autoCompleteRef.current = new window.google.maps.places.Autocomplete(inputRef.current, {
@@ -81,34 +91,62 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
       return;
     }
 
+    // Check if google maps is loaded
     if (!window.google || !window.google.maps) {
-      alert("Google Maps API is still loading. Please try again in a moment.");
+      alert("Maps API not ready yet. Please wait.");
       return;
     }
 
     setIsLoadingLocation(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
+    
+    const successCallback = (position: GeolocationPosition) => {
         const { latitude, longitude } = position.coords;
+        
+        // If Geocoder is missing (unlikely if maps loaded, but possible), fallback immediately
+        if (!window.google.maps.Geocoder) {
+             onChange(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+             setIsLoadingLocation(false);
+             return;
+        }
+
         const geocoder = new window.google.maps.Geocoder();
         
         geocoder.geocode({ location: { lat: latitude, lng: longitude } }, (results: any, status: any) => {
           setIsLoadingLocation(false);
-          if (status === "OK" && results[0]) {
+          if (status === "OK" && results && results[0]) {
             onChange(results[0].formatted_address);
           } else {
-            console.error("Geocoder failed: " + status);
-            // Fallback to coordinates if address fails
+            console.warn("Geocoder failed: " + status);
+            // Fallback to coordinates if address fails (e.g. API key doesn't allow geocoding)
             onChange(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
           }
         });
-      },
-      (error) => {
+    };
+
+    const errorCallback = (error: GeolocationPositionError) => {
         setIsLoadingLocation(false);
-        console.error("Geolocation error:", error);
-        alert("Unable to retrieve location. Please check permissions.");
-      },
-      { enableHighAccuracy: true, timeout: 5000 }
+        // Explicitly logging properties because the error object itself prints as [object Object]
+        console.error(`Geolocation Error (${error.code}): ${error.message}`);
+        
+        let msg = "Unable to retrieve location.";
+        switch(error.code) {
+            case error.PERMISSION_DENIED:
+                msg = "Location permission denied. Please allow location access in your browser settings.";
+                break;
+            case error.POSITION_UNAVAILABLE:
+                msg = "Location information is unavailable.";
+                break;
+            case error.TIMEOUT:
+                msg = "Location request timed out.";
+                break;
+        }
+        alert(msg);
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      successCallback,
+      errorCallback,
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   };
 
