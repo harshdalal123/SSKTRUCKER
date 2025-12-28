@@ -23,11 +23,40 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const autoCompleteRef = useRef<any>(null);
+  const [isApiReady, setIsApiReady] = useState(false);
 
+  // Check for Google Maps API availability
   useEffect(() => {
-    if (!window.google || !window.google.maps || !window.google.maps.places || !inputRef.current) return;
+    const checkApi = () => {
+      if (window.google && window.google.maps && window.google.maps.places) {
+        setIsApiReady(true);
+        return true;
+      }
+      return false;
+    };
+
+    if (checkApi()) return;
+
+    const interval = setInterval(() => {
+      if (checkApi()) {
+        clearInterval(interval);
+      }
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Initialize Autocomplete when API is ready
+  useEffect(() => {
+    if (!isApiReady || !inputRef.current) return;
 
     try {
+      // Clear previous instance if any
+      if (autoCompleteRef.current) {
+        // clean up listeners if possible, though GMaps instance cleanup is tricky. 
+        // Usually we just overwrite the ref.
+      }
+
       autoCompleteRef.current = new window.google.maps.places.Autocomplete(inputRef.current, {
         fields: ["formatted_address", "geometry", "name"],
         strictBounds: false,
@@ -44,7 +73,7 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
     } catch (e) {
       console.warn("Google Maps Autocomplete failed to initialize", e);
     }
-  }, []);
+  }, [isApiReady]);
 
   const handleCurrentLocation = () => {
     if (!navigator.geolocation) {
@@ -53,7 +82,7 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
     }
 
     if (!window.google || !window.google.maps) {
-      alert("Google Maps API not loaded");
+      alert("Google Maps API is still loading. Please try again in a moment.");
       return;
     }
 
@@ -70,7 +99,7 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
           } else {
             console.error("Geocoder failed: " + status);
             // Fallback to coordinates if address fails
-            onChange(`${latitude}, ${longitude}`);
+            onChange(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
           }
         });
       },
