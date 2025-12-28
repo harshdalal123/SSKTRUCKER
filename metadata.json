@@ -1,0 +1,7 @@
+{
+  "name": "SSK TRUCKER",
+  "description": "A futuristic, premium truck booking platform featuring real-time bidding, 3D tracking, and fleet management.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
